@@ -1,0 +1,41 @@
+{
+  "known_locks": ["db-primary", "traffic-ingress"],
+  "runbooks": [
+    {
+      "name": "db-failover",
+      "operator": "alice",
+      "steps": [
+        {"id": "check-lag", "kind": "read", "reads": ["db-primary"]},
+        {"id": "promote-replica", "kind": "destructive",
+         "writes": ["db-primary"], "locks": ["db-primary"],
+         "depends_on": ["check-lag"],
+         "preconditions": {"db-primary": "reachable"},
+         "fencing": "epoch == current_epoch",
+         "rollback": "demote-replica", "checkpoint": true, "timeout": 30},
+        {"id": "demote-replica", "kind": "write",
+         "writes": ["db-primary"], "locks": ["db-primary"],
+         "idempotent": true}
+      ]
+    },
+    {
+      "name": "traffic-shift",
+      "operator": "bob",
+      "steps": [
+        {"id": "read-ingress", "kind": "read", "reads": ["traffic-ingress"]},
+        {"id": "rewrite-ingress", "kind": "write",
+         "writes": ["traffic-ingress", "db-primary"],
+         "depends_on": ["read-ingress"],
+         "preconditions": {"traffic-ingress": "canary-ok"},
+         "timeout": 60}
+      ]
+    },
+    {
+      "name": "scale-out",
+      "operator": "carol",
+      "steps": [
+        {"id": "add-replicas", "kind": "write",
+         "writes": ["replica-pool"], "idempotent": true}
+      ]
+    }
+  ]
+}
